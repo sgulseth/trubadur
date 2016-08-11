@@ -1,0 +1,9 @@
+[package]
+name = "trubadur"
+version = "0.1.0"
+authors = ["Sindre Gulseth <sindre.gulseth@vg.no>"]
+
+[dependencies]
+regex = "0.1.73"
+lazy_static = "0.2.1"
+psutil = "1.0.0"
