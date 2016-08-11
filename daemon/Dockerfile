@@ -14,6 +14,7 @@ RUN curl -sL https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-unknow
 RUN /tmp/cargo-nightly-x86_64-unknown-linux-gnu/install.sh
 
 RUN mkdir /src
+ADD . /src
 WORKDIR /src
 
 VOLUME ["/src"]
