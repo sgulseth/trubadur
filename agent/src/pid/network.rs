@@ -25,7 +25,7 @@ enum Family { // We only care about TCP and UDP for now
 }
 
 #[derive(Debug)]
-enum State {
+enum ConntrackState {
     Establised,
     SynSent,
     SynRecv,
@@ -41,13 +41,12 @@ enum State {
 }
 
 #[derive(Debug)]
-enum PidError {
+enum NetworkError {
     ParserError
 }
 
 #[derive(Debug)]
 struct Conntrack {
-    pid: String,
     network_protocol: self::NetworkProtocol,
     network_protocol_number: i32,
     protocol: self::Family,
@@ -55,20 +54,19 @@ struct Conntrack {
     timeout: i32,
     src: SocketAddr,
     dst: SocketAddr,
-    state: self::State
+    state: self::ConntrackState
 }
 
-fn get_conntrack(pid: &str) -> Result<Vec<Conntrack>, PidError> {
-    let path = format!("/proc/{}/net/nf_conntrack", pid);
-    let mut f = match File::open(path) {
-        Err(why) => panic!("couldn't open {} conntrack: {}", pid, why.description()),
+fn get_conntrack() -> Result<Vec<Conntrack>, NetworkError> {
+    let mut f = match File::open("/proc/net/nf_conntrack") {
+        Err(why) => panic!("couldn't open /proc/net/nf_conntrack conntrack: {}", why.description()),
         Ok(file) => file,
     };
 
     // read the whole file
     let mut s = String::new();
     match f.read_to_string(&mut s) {
-        Err(why) => panic!("couldn't read {}: {}", pid, why.description()),
+        Err(why) => panic!("couldn't read /proc/net/nf_conntrack: {}", why.description()),
         Ok(content) => content
     };
 
@@ -77,12 +75,12 @@ fn get_conntrack(pid: &str) -> Result<Vec<Conntrack>, PidError> {
     let mut conntracks = Vec::new();
     for cap in re.captures_iter(s.trim()) {
         if cap.len() == 0 {
-            return Err(PidError::ParserError)
+            return Err(NetworkError::ParserError)
         }
 
         let network_protocol = match cap.at(1).unwrap() {
-            "Ipv4" => NetworkProtocol::Ipv4,
-            "Ipv6" => NetworkProtocol::Ipv6,
+            "ipv4" => NetworkProtocol::Ipv4,
+            "ipv6" => NetworkProtocol::Ipv6,
             _ => NetworkProtocol::Unknown
         };
 
@@ -93,18 +91,18 @@ fn get_conntrack(pid: &str) -> Result<Vec<Conntrack>, PidError> {
         };
 
         let state = match cap.at(6).unwrap() {
-            "ESTABLISHED" => State::Establised,
-            "SYN_SENT" => State::SynSent,
-            "SYN_RECV" => State::SynRecv,
-            "FIN_WAIT1" => State::FinWait1,
-            "FIN_WAIT2" => State::FinWait2,
-            "TIME_WAIT" => State::TimeWait,
-            "CLOSE" => State::Close,
-            "CLOSE_WAIT" => State::CloseWait,
-            "LAST_ACK" => State::LastAck,
-            "LISTEN" => State::Listen,
-            "CLOSING" => State::Closing,
-            _ => State::Unknown,
+            "ESTABLISHED" => ConntrackState::Establised,
+            "SYN_SENT" => ConntrackState::SynSent,
+            "SYN_RECV" => ConntrackState::SynRecv,
+            "FIN_WAIT1" => ConntrackState::FinWait1,
+            "FIN_WAIT2" => ConntrackState::FinWait2,
+            "TIME_WAIT" => ConntrackState::TimeWait,
+            "CLOSE" => ConntrackState::Close,
+            "CLOSE_WAIT" => ConntrackState::CloseWait,
+            "LAST_ACK" => ConntrackState::LastAck,
+            "LISTEN" => ConntrackState::Listen,
+            "CLOSING" => ConntrackState::Closing,
+            _ => ConntrackState::Unknown,
         };
 
         let src_ip_string = cap.at(7).unwrap_or("");
@@ -147,7 +145,6 @@ fn get_conntrack(pid: &str) -> Result<Vec<Conntrack>, PidError> {
         };
 
         let conntrack: Conntrack = Conntrack {
-            pid: pid.to_string(),
             network_protocol: network_protocol,
             network_protocol_number: network_protocol_number,
             protocol: protocol,
@@ -162,36 +159,20 @@ fn get_conntrack(pid: &str) -> Result<Vec<Conntrack>, PidError> {
     return Ok(conntracks);
 }
 
-fn get_netstat(pid: &str) -> String {
-    let path = format!("/proc/{}/net/nf_conntrack", pid);
-    let mut f = match File::open(path) {
-        Err(why) => panic!("couldn't open {} conntrack: {}", pid, why.description()),
-        Ok(file) => file,
-    };
-
-    // read the whole file
-    let mut s = String::new();
-    match f.read_to_string(&mut s) {
-        Err(why) => panic!("couldn't read {}: {}", pid, why.description()),
-        Ok(content) => content
-    };
-
-    return s;
-}
-
-pub fn collect_process_network_data(pid: &str) {
-    let file = format!("/proc/{}/net", pid);
-    let path = Path::new(&file);
+pub fn collect_network_data() {
+    let path = Path::new("/proc/net");
     if path.exists() {
-        let conntracks = match self::get_conntrack(pid) {
+        let conntracks = match self::get_conntrack() {
             Err(v) => panic!("Error :("),
             Ok(v) => v
         };
 
-        println!("Found {} connections for pid {}", conntracks.len(), pid);
+        println!("Found {} connections", conntracks.len());
 
         for conntrack in &conntracks {
-            println!("{:?}", conntrack);
+            println!("\t{:?}", conntrack);
         }
+
+        println!("");
     }
 }

@@ -18,4 +18,4 @@ ADD . /src
 WORKDIR /src
 
 VOLUME ["/src"]
-CMD ["bash"]
+CMD ["cargo run"]
