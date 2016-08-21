@@ -1,6 +1,6 @@
-use time;
-
 use std::net::IpAddr;
+use std::fmt;
+use std::error;
 
 use pnet::packet::PacketSize;
 use pnet::packet::Packet;
@@ -10,8 +10,9 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::tcp::TcpPacket;
-
 use pnet::datalink::{self, NetworkInterface};
+
+use influent::client::http::HttpClient;
 
 pub struct Proto {
     pub protocol: String,
@@ -22,11 +23,42 @@ pub struct Proto {
     pub destination_port: u16
 }
 
+#[derive(Debug)]
 pub enum SnifferError {
     HandlePacketError,
+    UnknownPacketProtocol,
     Ipv4PacketError,
     Ipv6PacketError
 }
+
+impl fmt::Display for SnifferError {
+    // TODO: Provide information about the parameter format expected when
+    // displaying malformed parameter errors
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::SnifferError::*;
+
+        match *self {
+            HandlePacketError => write!(f, "Error: Couldnt handle packet "),
+            UnknownPacketProtocol => write!(f, "Error: Unkown packet protocol "),
+            Ipv4PacketError => write!(f, "Error: Couldnt handle ipv4 packet "),
+            Ipv6PacketError => write!(f, "Error: Couldnt handle ipv6 packet "),
+        }
+    }
+}
+
+impl error::Error for SnifferError {
+    fn description(&self) -> &str {
+        use self::SnifferError::*;
+
+        match *self {
+            HandlePacketError => "Error: Couldnt handle packet ",
+            UnknownPacketProtocol => "Error: Unkown packet protocol",
+            Ipv4PacketError => "Error: Couldnt handle ipv4 packet ",
+            Ipv6PacketError => "Error: Couldnt handle ipv6 packet ",
+        }
+    }
+}
+
 
 fn handle_transport_protocol(source: IpAddr, destination: IpAddr, protocol: IpNextHeaderProtocol, packet: &[u8]) -> Option<Proto> {
     let proto = match protocol {
@@ -95,17 +127,15 @@ fn handle_ipv6_packet(ethernet: &EthernetPacket) -> Option<Proto> {
 }
 
 
-fn handle_packet(ethernet: &EthernetPacket) -> Result<Option<Proto> , SnifferError> {
-    let packet = match ethernet.get_ethertype() {
-        EtherTypes::Ipv4 => Ok(handle_ipv4_packet(ethernet)),
-        EtherTypes::Ipv6 => Ok(handle_ipv6_packet(ethernet)),
-        _  => Err(SnifferError::HandlePacketError)
-    };
-
-    return packet;
+fn handle_packet(ethernet: &EthernetPacket) -> Option<Proto> {
+    match ethernet.get_ethertype() {
+        EtherTypes::Ipv4 => handle_ipv4_packet(ethernet),
+        EtherTypes::Ipv6 => handle_ipv6_packet(ethernet),
+        _  => None
+    }
 }
 
-pub fn start(iface_name: &str, capture_duration: i64) -> Vec<Proto> {
+pub fn capture(iface_name: &str, save: &Fn(&Proto, &HttpClient), influxdb_client: &HttpClient) {
     use pnet::datalink::Channel::Ethernet;
 
     let interface_names_match = |iface: &NetworkInterface| iface.name == iface_name;
@@ -124,32 +154,18 @@ pub fn start(iface_name: &str, capture_duration: i64) -> Vec<Proto> {
         Err(e) => panic!("packetdump: unable to create channel: {}", e),
     };
 
-    let mut data = Vec::new();
     let mut iter = rx.iter();
-    let mut done = false;
-    let end = time::get_time() + time::Duration::seconds(capture_duration);
 
-    while !done {
-        println!("Collecting...");
+    loop {
         let packet_data = match iter.next() {
-            Ok(packet) => {
-                match handle_packet(&packet) {
-                    Ok(v) => v,
-                    Err(e) => panic!("packetdump: unable to receive packet")
-                }
-            },
-            _ => panic!("packetdump: unable to receive packet")
+            Ok(packet) => packet,
+            _ => panic!("packetdump: unable to iterage packet")
         };
-        println!("Got packet");
-        if let Some(packet_data) = packet_data {
-            data.push(packet_data);
-        }
 
-        let now = time::get_time();
-        if now.gt(&end) {
-            done = true;
+        let packet = handle_packet(&packet_data);
+
+        if let Some(packet) = packet {
+            save(&packet, influxdb_client);
         }
     }
-
-    return data;
 }

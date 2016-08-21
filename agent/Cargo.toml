@@ -7,6 +7,6 @@ authors = ["Sindre Gulseth <sindre.gulseth@vg.no>"]
 time = "0.1"
 regex = "0.1.73"
 lazy_static = "0.2.1"
-psutil = "1.0.0"
+toml = "0.2"
 pnet = "0.12.0"
 influent = "0.3"

@@ -1,0 +1,7 @@
+[general]
+
+[influxdb]
+hosts = ["http://influxdb:8086"]
+database = "trubadur"
+username = "root"
+password = ""
